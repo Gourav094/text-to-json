@@ -4,6 +4,7 @@ import time
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import threading
+import re
 
 model="phi3:mini"
 
@@ -38,8 +39,21 @@ class ExtractRequest(BaseModel):
     text: str
     retries: int = 2
 
+phone = re.compile(r"^[+()\d\s-]{6,}$")
+email = re.compile(r".+@.+\..+")
+
+def sanitize_data(data: dict) -> dict:
+    if data.get("working_at") and phone.match(data["working_at"]):
+        data["working_at"] = None
+    if data.get("email") and not email.match(data["email"]):
+        data["email"] = None
+    if data.get("phone") and not phone.match(data["phone"]):
+        data["phone"] = None
+    return data
+
 @app.post("/llm/extract/profiles")
 def profile_extractor(req: ExtractRequest):
+    print(f"Using model :: {model}")
     start = time.perf_counter()
     attempts = 0
     last_error = None
@@ -61,8 +75,8 @@ def profile_extractor(req: ExtractRequest):
                 if not raw:
                     raise ValueError("Empty response from model")
                 data=json.loads(raw)
+                data  = sanitize_data(data)
                 print(f"Extracted data: {data}")
-
                 with _metrics_lock:
                     _metrics['success'] += 1
 
